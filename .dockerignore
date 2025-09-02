@@ -22,3 +22,5 @@ node_modules
 
 Dockerfile
 .dockerignore
+.git
+bin/bb
