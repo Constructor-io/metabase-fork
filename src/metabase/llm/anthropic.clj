@@ -32,8 +32,8 @@
   (cond-> {"x-portkey-api-key" api-key
            "anthropic-version" (llm.settings/llm-anthropic-api-version)
            "content-type"      "application/json"}
-    (not (str/blank? (llm.settings/llm-anthropic-portkey-config)))
-    (assoc "x-portkey-config" (llm.settings/llm-anthropic-portkey-config))))
+    (not (str/blank? (llm.settings/llm-anthropic-portkey-provider)))
+    (assoc "x-portkey-provider" (llm.settings/llm-anthropic-portkey-provider))))
 
 (defn- build-request-body
   "Build the request body for Anthropic messages API."
