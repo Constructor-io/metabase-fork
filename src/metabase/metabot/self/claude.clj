@@ -210,7 +210,9 @@
      (let [auth   (core/resolve-auth "anthropic" "Anthropic"
                                      (when-let [k (or (not-empty api-key) (not-empty (llm/llm-anthropic-api-key)))]
                                        {:url     (llm/llm-anthropic-api-base-url)
-                                        :headers {"x-portkey-api-key" k}})
+                                        :headers (cond-> {"x-portkey-api-key" k}
+                                                   (not-empty (llm/llm-anthropic-portkey-config))
+                                                   (assoc "x-portkey-config" (llm/llm-anthropic-portkey-config)))})
                                      ai-proxy?)
            res    (core/request auth {:method  :get
                                       :url     "/v1/models"
@@ -252,7 +254,9 @@
               auth     (core/resolve-auth "anthropic" "Anthropic"
                                           (when api-key
                                             {:url     (llm/llm-anthropic-api-base-url)
-                                             :headers {"x-portkey-api-key" api-key}})
+                                             :headers (cond-> {"x-portkey-api-key" api-key}
+                                                        (not-empty (llm/llm-anthropic-portkey-config))
+                                                        (assoc "x-portkey-config" (llm/llm-anthropic-portkey-config)))})
                                           ai-proxy?)
               response (core/request auth
                                      {:method  :post
