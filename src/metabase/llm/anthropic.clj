@@ -29,7 +29,7 @@
 (defn- build-request-headers
   "Build headers for Anthropic API request."
   [api-key]
-  {"x-api-key"         api-key
+  {"x-portkey-api-key" api-key
    "anthropic-version" (llm.settings/llm-anthropic-api-version)
    "content-type"      "application/json"})
 

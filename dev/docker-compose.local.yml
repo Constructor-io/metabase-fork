@@ -2,7 +2,7 @@ version: '3.1'
 
 services:
   metabase:
-    image: 073865013699.dkr.ecr.us-east-1.amazonaws.com/dp-metabase:v0.60.2-0-amd64
+    image: 073865013699.dkr.ecr.us-east-1.amazonaws.com/dp-metabase:v0.60.2-1-amd64
     container_name: metabase
     restart: always
     ports:
@@ -18,6 +18,7 @@ services:
       MB_PLUGINS_DIR: "plugins"
       MAX_SESSION_AGE: "1440"
       MB_DB_PASS: "${METABASE_DEV_DB_PASSWORD}"
+      MB_LLM_ANTHROPIC_API_BASE_URL: "https://portkey.cnstrc.com"
     networks:
       - metabasenet
 

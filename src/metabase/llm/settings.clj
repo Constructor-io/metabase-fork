@@ -26,10 +26,6 @@
   :visibility       :settings-manager
   :export?          false
   :deprecated-name  :ee-anthropic-api-key
-  :setter           (partial set-prefixed-api-key!
-                             :llm-anthropic-api-key
-                             "sk-ant-"
-                             (deferred-tru "Invalid Anthropic API key format. Key must start with ''sk-ant-''."))
   :doc false)
 
 (defsetting llm-anthropic-api-key-configured?
