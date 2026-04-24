@@ -2,7 +2,7 @@ version: '3.1'
 
 services:
   metabase:
-    image: 073865013699.dkr.ecr.us-east-1.amazonaws.com/dp-metabase:v0.60.2-1-amd64
+    image: 073865013699.dkr.ecr.us-east-1.amazonaws.com/dp-metabase:v0.60.2-2-amd64
     container_name: metabase
     restart: always
     ports:
