@@ -62,6 +62,14 @@
   :export? false
   :doc false)
 
+(defsetting llm-anthropic-portkey-config
+  (deferred-tru "Portkey config ID to route Anthropic requests through the Portkey gateway. When set, sent as the x-portkey-config header.")
+  :encryption :no
+  :visibility :settings-manager
+  :default nil
+  :export? false
+  :doc false)
+
 ;;; -------------------------------------------------- OpenAI ---------------------------------------------------
 
 (defsetting llm-openai-model
