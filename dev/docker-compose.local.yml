@@ -19,7 +19,7 @@ services:
       MAX_SESSION_AGE: "1440"
       MB_DB_PASS: "${METABASE_DEV_DB_PASSWORD}"
       MB_LLM_ANTHROPIC_API_BASE_URL: "https://portkey.cnstrc.com"
-      MB_LLM_ANTHROPIC_PORTKEY_CONFIG: "metabase"
+      MB_LLM_ANTHROPIC_PORTKEY_PROVIDER: "bedrock"
     networks:
       - metabasenet
 

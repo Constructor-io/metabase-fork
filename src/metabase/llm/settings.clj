@@ -62,8 +62,8 @@
   :export? false
   :doc false)
 
-(defsetting llm-anthropic-portkey-config
-  (deferred-tru "Portkey config ID to route Anthropic requests through the Portkey gateway. When set, sent as the x-portkey-config header.")
+(defsetting llm-anthropic-portkey-provider
+  (deferred-tru "Portkey provider slug for Anthropic requests. When set, sent as the x-portkey-provider header.")
   :encryption :no
   :visibility :settings-manager
   :default nil
