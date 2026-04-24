@@ -1,6 +1,7 @@
 (ns metabase.metabot.self.claude
   (:require
    [clojure.string :as str]
+   [clojure.tools.logging :as log]
    [malli.json-schema :as mjs]
    [metabase.llm.settings :as llm]
    [metabase.metabot.self.core :as core]
@@ -221,7 +222,11 @@
            models (reverse (sort-by :created_at (:data body)))]
        {:models (map #(select-keys % [:id :display_name]) models)})
      (catch Exception e
-       (core/rethrow-api-error! "anthropic" anthropic-errors e)))))
+       ;; Portkey API keys often lack permissions to list models. Swallow the
+       ;; error and return an empty list so settings can still be saved; the
+       ;; model is picked from the `llm-anthropic-model` setting instead.
+       (log/warnf e "Failed to list Anthropic models, returning empty list")
+       {:models []}))))
 
 (mu/defn claude-raw
   "Perform a streaming request to Claude API."
