@@ -21,7 +21,7 @@ services:
       MB_LLM_ANTHROPIC_API_BASE_URL: "https://portkey.cnstrc.com"
       MB_LLM_ANTHROPIC_PORTKEY_PROVIDER: "@bedrock"
       MB_LLM_ANTHROPIC_MODEL: "us.anthropic.claude-opus-4-6-v1"
-      MB_LLM_METABOT_PROVIDER: "us.anthropic.claude-opus-4-6-v1"
+      MB_LLM_METABOT_PROVIDER: "anthropic/us.anthropic.claude-opus-4-6-v1"
     networks:
       - metabasenet
 
