@@ -1,6 +1,7 @@
 (ns metabase.metabot.self.claude
   (:require
    [clojure.string :as str]
+   [clojure.tools.logging :as log]
    [malli.json-schema :as mjs]
    [metabase.llm.settings :as llm]
    [metabase.metabot.self.core :as core]
@@ -210,7 +211,9 @@
      (let [auth   (core/resolve-auth "anthropic" "Anthropic"
                                      (when-let [k (or (not-empty api-key) (not-empty (llm/llm-anthropic-api-key)))]
                                        {:url     (llm/llm-anthropic-api-base-url)
-                                        :headers {"x-api-key" k}})
+                                        :headers (cond-> {"x-portkey-api-key" k}
+                                                   (not-empty (llm/llm-anthropic-portkey-provider))
+                                                   (assoc "x-portkey-provider" (llm/llm-anthropic-portkey-provider)))})
                                      ai-proxy?)
            res    (core/request auth {:method  :get
                                       :url     "/v1/models"
@@ -219,7 +222,11 @@
            models (reverse (sort-by :created_at (:data body)))]
        {:models (map #(select-keys % [:id :display_name]) models)})
      (catch Exception e
-       (core/rethrow-api-error! "anthropic" anthropic-errors e)))))
+       ;; Portkey API keys often lack permissions to list models. Swallow the
+       ;; error and return an empty list so settings can still be saved; the
+       ;; model is picked from the `llm-anthropic-model` setting instead.
+       (log/warnf e "Failed to list Anthropic models, returning empty list")
+       {:models []}))))
 
 (mu/defn claude-raw
   "Perform a streaming request to Claude API."
@@ -252,7 +259,9 @@
               auth     (core/resolve-auth "anthropic" "Anthropic"
                                           (when api-key
                                             {:url     (llm/llm-anthropic-api-base-url)
-                                             :headers {"x-api-key" api-key}})
+                                             :headers (cond-> {"x-portkey-api-key" api-key}
+                                                        (not-empty (llm/llm-anthropic-portkey-provider))
+                                                        (assoc "x-portkey-provider" (llm/llm-anthropic-portkey-provider)))})
                                           ai-proxy?)
               response (core/request auth
                                      {:method  :post

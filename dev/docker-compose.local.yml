@@ -1,0 +1,56 @@
+version: '3.1'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: metabase-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: "metabase"
+      POSTGRES_USER: "metabase_user"
+      POSTGRES_PASSWORD: "metabase_password"
+    ports:
+      - "5432:5432"
+    volumes:
+      - metabase-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metabase_user -d metabase"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - metabasenet
+
+  metabase:
+    image: 073865013699.dkr.ecr.us-east-1.amazonaws.com/dp-metabase:v0.60.2-4-amd64
+    container_name: metabase
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MB_HTTP_TIMEOUT: "5000"
+      JAVA_TIMEZONE: "UTC"
+      MB_DB_TYPE: "postgres"
+      MB_DB_DBNAME: "metabase"
+      MB_DB_PORT: "5432"
+      MB_DB_USER: "metabase_user"
+      MB_DB_HOST: "postgres"
+      MB_DB_PASS: "metabase_password"
+      MB_PLUGINS_DIR: "plugins"
+      MAX_SESSION_AGE: "1440"
+      MB_LLM_ANTHROPIC_API_BASE_URL: "https://portkey.cnstrc.com"
+      MB_LLM_ANTHROPIC_PORTKEY_PROVIDER: "@bedrock"
+      MB_LLM_ANTHROPIC_MODEL: "us.anthropic.claude-opus-4-6-v1"
+      MB_LLM_METABOT_PROVIDER: "anthropic/us.anthropic.claude-opus-4-6-v1"
+      MB_LLM_ANTHROPIC_API_KEY: "test_token" 
+    networks:
+      - metabasenet
+
+networks:
+  metabasenet:
+
+volumes:
+  metabase-postgres-data:

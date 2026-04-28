@@ -29,9 +29,11 @@
 (defn- build-request-headers
   "Build headers for Anthropic API request."
   [api-key]
-  {"x-api-key"         api-key
-   "anthropic-version" (llm.settings/llm-anthropic-api-version)
-   "content-type"      "application/json"})
+  (cond-> {"x-portkey-api-key" api-key
+           "anthropic-version" (llm.settings/llm-anthropic-api-version)
+           "content-type"      "application/json"}
+    (not (str/blank? (llm.settings/llm-anthropic-portkey-provider)))
+    (assoc "x-portkey-provider" (llm.settings/llm-anthropic-portkey-provider))))
 
 (defn- build-request-body
   "Build the request body for Anthropic messages API."

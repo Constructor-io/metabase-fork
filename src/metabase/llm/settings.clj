@@ -26,10 +26,6 @@
   :visibility       :settings-manager
   :export?          false
   :deprecated-name  :ee-anthropic-api-key
-  :setter           (partial set-prefixed-api-key!
-                             :llm-anthropic-api-key
-                             "sk-ant-"
-                             (deferred-tru "Invalid Anthropic API key format. Key must start with ''sk-ant-''."))
   :doc false)
 
 (defsetting llm-anthropic-api-key-configured?
@@ -63,6 +59,14 @@
   :encryption :no
   :visibility :internal
   :default "2023-06-01"
+  :export? false
+  :doc false)
+
+(defsetting llm-anthropic-portkey-provider
+  (deferred-tru "Portkey provider slug for Anthropic requests. When set, sent as the x-portkey-provider header.")
+  :encryption :no
+  :visibility :settings-manager
+  :default nil
   :export? false
   :doc false)
 
