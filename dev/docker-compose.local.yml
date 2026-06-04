@@ -41,11 +41,6 @@ services:
       MB_DB_PASS: "metabase_password"
       MB_PLUGINS_DIR: "plugins"
       MAX_SESSION_AGE: "1440"
-      MB_LLM_ANTHROPIC_API_BASE_URL: "https://portkey.cnstrc.com"
-      MB_LLM_ANTHROPIC_PORTKEY_PROVIDER: "@bedrock"
-      MB_LLM_ANTHROPIC_MODEL: "us.anthropic.claude-opus-4-6-v1"
-      MB_LLM_METABOT_PROVIDER: "anthropic/us.anthropic.claude-opus-4-6-v1"
-      MB_LLM_ANTHROPIC_API_KEY: "test_token" 
     networks:
       - metabasenet
 
