@@ -16,6 +16,7 @@ import _ from "underscore";
 import { SettingsSection } from "metabase/admin/components/SettingsSection";
 import { SetByEnvVar } from "metabase/admin/settings/components/widgets/AdminSettingInput";
 import {
+  skipToken,
   useGetMetabotSettingsQuery,
   useUpdateMetabotSettingsMutation,
   useUpdateSettingsMutation,
@@ -68,14 +69,14 @@ function getModelDescription(provider: MetabotProvider | undefined) {
 const MetabotSetupContext = createContext<{
   connectHandlerRef: MutableRefObject<(() => Promise<void>) | null> | null;
   disconnectHandlerRef: MutableRefObject<(() => Promise<void>) | null> | null;
-  isLoading: boolean;
+  isMutating: boolean;
   isConnectButtonEnabled: boolean;
   setIsConnectButtonEnabled: (enabled: boolean) => void;
   resetProvider: VoidFunction;
   handleDisconnect: VoidFunction;
   isModal: boolean;
 }>({
-  isLoading: false,
+  isMutating: false,
   connectHandlerRef: null,
   disconnectHandlerRef: null,
   isConnectButtonEnabled: false,
@@ -92,7 +93,7 @@ export function useMetabotSetupContext(
   const {
     connectHandlerRef,
     disconnectHandlerRef,
-    isLoading,
+    isMutating,
     setIsConnectButtonEnabled,
     resetProvider,
     handleDisconnect,
@@ -125,7 +126,7 @@ export function useMetabotSetupContext(
     };
   }, [disconnectHandlerRef, onDisconnect]);
 
-  return { isLoading, resetProvider, handleDisconnect, isModal };
+  return { isMutating, resetProvider, handleDisconnect, isModal };
 }
 
 export function MetabotSetup({ id }: { id?: string }) {
@@ -137,6 +138,13 @@ export function MetabotSetup({ id }: { id?: string }) {
   );
   const isConfigured = !!useSetting("llm-metabot-configured?");
   const connectedProvider = isConfigured ? config?.provider : undefined;
+  const connectedProviderSettingsQuery = useGetMetabotSettingsQuery(
+    connectedProvider && connectedProvider !== "metabase"
+      ? { provider: connectedProvider }
+      : skipToken,
+  );
+  const hasApiKeyError =
+    !!connectedProviderSettingsQuery.currentData?.["api-key-error"];
 
   return (
     <SettingsSection
@@ -144,13 +152,31 @@ export function MetabotSetup({ id }: { id?: string }) {
       title={
         <Flex justify="space-between" align="center">
           <Group gap="xs" wrap="nowrap">
-            {isConfigured ? (
-              <Badge circle size="12" bg="success" mr="sm" />
-            ) : null}
+            {connectedProvider && (
+              <Badge
+                circle
+                size="12"
+                bg={hasApiKeyError ? "error" : "success"}
+                mr="sm"
+              />
+            )}
             <div>
-              {connectedProvider
-                ? t`Connected to ${getProviderOptions(offerMetabaseAiManaged)[connectedProvider]?.label}`
-                : t`Connect to an AI provider`}
+              {match({ connectedProvider, hasApiKeyError })
+                .with(
+                  { connectedProvider: P.nonNullable, hasApiKeyError: true },
+                  ({ connectedProvider }) =>
+                    t`Error connecting to ${getProviderOptions(offerMetabaseAiManaged)[connectedProvider]?.label}`,
+                )
+                .with(
+                  { connectedProvider: P.nonNullable },
+                  ({ connectedProvider }) =>
+                    t`Connected to ${getProviderOptions(offerMetabaseAiManaged)[connectedProvider]?.label}`,
+                )
+                .with(
+                  { connectedProvider: P.nullish },
+                  () => t`Connect to an AI provider`,
+                )
+                .exhaustive()}
             </div>
           </Group>
         </Flex>
@@ -177,11 +203,9 @@ export function MetabotSetupInner({
   const offerMetabaseAiManaged = PLUGIN_METABOT.isEnabled;
   const [sendToast] = useToast();
 
-  const {
-    value: savedProviderValue,
-    settingDetails,
-    isFetching: isMetabotProviderLoading,
-  } = useAdminSetting("llm-metabot-provider");
+  const { value: savedProviderValue, settingDetails } = useAdminSetting(
+    "llm-metabot-provider",
+  );
   const isEnvSetting =
     !!settingDetails &&
     !!settingDetails.is_env_setting &&
@@ -305,11 +329,8 @@ export function MetabotSetupInner({
     setProvider(undefined);
   };
 
-  const isLoading =
-    isConnecting ||
-    isDisconnecting ||
-    updateSettingsResult.isLoading ||
-    isMetabotProviderLoading;
+  const isMutating =
+    isConnecting || isDisconnecting || updateSettingsResult.isLoading;
 
   const [isConnectButtonEnabled, setIsConnectButtonEnabled] = useState(false);
 
@@ -318,7 +339,7 @@ export function MetabotSetupInner({
       value={{
         connectHandlerRef,
         disconnectHandlerRef,
-        isLoading,
+        isMutating,
         setIsConnectButtonEnabled,
         isConnectButtonEnabled,
         resetProvider,
@@ -334,7 +355,7 @@ export function MetabotSetupInner({
             data={providerOptions}
             value={provider}
             onChange={setProvider}
-            disabled={isEnvSetting || isLoading}
+            disabled={isEnvSetting || isMutating}
             renderOption={({ option }) => (
               <Group
                 gap="xs"
@@ -360,7 +381,9 @@ export function MetabotSetupInner({
         )}
 
         {match(provider)
-          .with("metabase", () => <MetabaseAIProviderSetup />)
+          .with("metabase", () => (
+            <MetabaseAIProviderSetup onConnect={onClose} />
+          ))
           .with(P.nonNullable, (selectedProvider) => (
             <AIProviderSetup
               selectedProvider={selectedProvider}
@@ -379,8 +402,8 @@ export function MetabotSetupInner({
             .with({ isModal: true, isCurrentConfigured: true }, () => (
               <Button
                 variant="filled"
-                loading={isLoading}
-                disabled={isLoading}
+                loading={isMutating}
+                disabled={isMutating}
                 onClick={onClose}
               >
                 {t`Done`}
@@ -391,8 +414,8 @@ export function MetabotSetupInner({
               () => (
                 <Button
                   c="danger"
-                  loading={isLoading}
-                  disabled={isLoading}
+                  loading={isMutating}
+                  disabled={isMutating}
                   onClick={async () => {
                     setIsDisconnecting(true);
                     try {
@@ -412,8 +435,8 @@ export function MetabotSetupInner({
               () => (
                 <Button
                   variant="filled"
-                  loading={isLoading}
-                  disabled={isLoading || !isConnectButtonEnabled}
+                  loading={isMutating}
+                  disabled={isMutating || !isConnectButtonEnabled}
                   onClick={handleConnect}
                 >
                   {t`Connect`}
@@ -462,7 +485,7 @@ const AIProviderSetup = ({
   const connectHandler =
     !isCurrentConfigured || hasDirtyApiKey ? onConnect : null;
 
-  const { isLoading } = useMetabotSetupContext(connectHandler);
+  const { isMutating } = useMetabotSetupContext(connectHandler);
 
   const { details: providerApiKeyDetails } = useAdminSettings([
     "llm-anthropic-api-key",
@@ -473,6 +496,9 @@ const AIProviderSetup = ({
   const selectedApiKeySetting =
     providerApiKeyDetails[API_KEY_SETTING_BY_PROVIDER[selectedProvider]];
   const selectedApiKeyValue = String(selectedApiKeySetting?.value ?? "");
+  const apiKeyEnvSettingName = selectedApiKeySetting?.is_env_setting
+    ? selectedApiKeySetting.env_name
+    : undefined;
   const needsApiKey = !hasConfiguredSettingValue(selectedApiKeySetting);
 
   const metabotSettingsQuery = useGetMetabotSettingsQuery(
@@ -491,6 +517,9 @@ const AIProviderSetup = ({
     metabotSettingsQuery.error,
     selectedProvider,
   );
+  const apiKeyError = hasDirtyApiKey
+    ? undefined
+    : (metabotSettingsQuery.currentData?.["api-key-error"] ?? undefined);
 
   const displayApiKeyValue = apiKeyLocalValue ?? selectedApiKeyValue;
 
@@ -541,20 +570,21 @@ const AIProviderSetup = ({
           selectedProviderDetails.apiKey?.placeholder ?? t`Enter your API key`
         }
         value={displayApiKeyValue}
+        error={apiKeyError}
         onChange={handleApiKeyChange}
-        disabled={isLoading || isEnvSetting}
+        disabled={isMutating || isEnvSetting || !!apiKeyEnvSettingName}
         w="100%"
       />
 
-      {isEnvSetting && selectedApiKeySetting?.env_name ? (
-        <SetByEnvVar varName={selectedApiKeySetting.env_name} />
+      {apiKeyEnvSettingName ? (
+        <SetByEnvVar varName={apiKeyEnvSettingName} />
       ) : null}
 
-      {!needsApiKey && (
+      {!needsApiKey && !apiKeyError && (
         <Select
           label={t`Model`}
           placeholder={
-            metabotSettingsQuery.isFetching
+            metabotSettingsQuery.isLoading
               ? t`Loading models...`
               : t`Select a model`
           }
@@ -563,7 +593,7 @@ const AIProviderSetup = ({
           data={modelOptions}
           value={model}
           onChange={handleModelChange}
-          disabled={isEnvSetting || needsApiKey || isLoading}
+          disabled={isEnvSetting || needsApiKey || isMutating}
           searchable
           nothingFoundMessage={t`No models found`}
         />

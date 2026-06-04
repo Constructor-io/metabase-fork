@@ -7,9 +7,7 @@
    [clojure.set :as set]
    [clojure.string :as str]
    [metabase.api-keys.core :as api-key]
-   [metabase.api.common
-    :as api
-    :refer [*current-user-id*]]
+   [metabase.api.common :as api]
    [metabase.app-db.core :as mdb]
    [metabase.audit-app.core :as audit]
    [metabase.collections.models.collection.root :as collection.root]
@@ -174,6 +172,11 @@
   (binding [*clearing-remote-sync* true]
     (t2/update! :model/Collection :is_remote_synced true {:is_remote_synced false})))
 
+(defn has-remote-synced-collection?
+  "Return true if any collections are marked remote-sync"
+  []
+  (pos-int? (t2/count :model/Collection :is_remote_synced true)))
+
 (defn library-collection
   "Get the 'library' collection, if it exists."
   []
@@ -278,7 +281,7 @@
   (when (str/blank? collection-name)
     (throw (ex-info (tru "Collection name cannot be blank!")
                     {:status-code 400, :errors {:name (tru "cannot be blank")}})))
-  (u/slugify collection-name collection-slug-max-length))
+  (u/slugify collection-name {:max-length collection-slug-max-length}))
 
 ;;; +----------------------------------------------------------------------------------------------------------------+
 ;;; |                                       Nested Collections: Location Paths                                       |
@@ -549,7 +552,6 @@
    (or
     ;; If collection has an owner ID we're already done here, we know it's a Personal Collection
     (:personal_owner_id collection)
-
     ;; Try to get the ID of its highest-level ancestor, e.g. if `location` is `/1/2/3/` we would get `1`. Then see if
     ;; the root-level ancestor is a Personal Collection (Personal Collections can only exist in the Root Collection.)
     (when-let [id (first (location-path->ids (:location collection)))]
@@ -566,9 +568,8 @@
 (mu/defn is-dedicated-tenant-collection-or-descendant? :- :boolean
   "Is `collection` a Tenant Collection, or a descendant of one?"
   [collection :- CollectionWithNamespace]
-  (boolean
-   ;; If collection has namespace = "tenant-specific" we know it's in the dedicated tenant namespace
-   (= (some-> (:namespace collection) name) "tenant-specific")))
+  ;; If collection has namespace = "tenant-specific" we know it's in the dedicated tenant namespace
+  (= (some-> (:namespace collection) name) "tenant-specific"))
 
 (mu/defn user->existing-personal-collection :- [:maybe (ms/InstanceOf :model/Collection)]
   "For a `user-or-id`, return their personal Collection, if it already exists.
@@ -747,10 +748,8 @@
    (and
     ;; we have permission for it.
     (can-access-root-collection? user-scope (:permission-level visibility-config))
-
     ;; we're not *only* looking for archived items
     (not= :only (:include-archived-items visibility-config))
-
     ;; we're not looking for a particular `archive_operation_id`
     (not (:archive-operation-id visibility-config)))))
 
@@ -826,24 +825,20 @@
             ;; hiding the trash collection when desired...
             (when-not (:include-trash-collection? visibility-config)
               [:not= [:inline (trash-collection-id)] :c.id])
-
             ;; hiding archived items when desired...
             (when (= :exclude (:include-archived-items visibility-config))
               [:= :c.archived false])
-
             ;; (or showing them, if that's what you want)
             (when (= :only (:include-archived-items visibility-config))
               [:or
                [:= :c.archived true]
                ;; the trash collection is included when viewing archived-only
                [:= :id [:inline (trash-collection-id)]]])
-
             (when-not (perms/use-tenants)
               [:not [:exists {:select [1]
                               :from [[:collection :sub_c]]
                               :where [:and [:= :c.id :sub_c.id]
                                       [:= :sub_c.namespace [:inline "shared-tenant-collection"]]]}]])
-
             ;; excluding things outside of the `archive_operation_id` you wanted...
             (when-let [op-id (:archive-operation-id visibility-config)]
               [:or
@@ -892,7 +887,6 @@
        [:and
         ;; an effective child is a descendant of the parent collection
         [:like (->col "location") (str (children-location parent-coll) "%")]
-
         ;; but NOT a child of any OTHER visible collection.
         [:not [:exists {:select 1
                         :from [[:collection :c2]]
@@ -1075,7 +1069,7 @@
                        ;; cluttered with Personal Collections belonging to other users
                        [:or
                         [:= :personal_owner_id nil]
-                        [:= :personal_owner_id *current-user-id*]]
+                        [:= :personal_owner_id api/*current-user-id*]]
                        additional-honeysql-where-clauses)})
    []))
 
@@ -1583,7 +1577,6 @@
                                                                   :archived [:= true]))]
     (api/check-400
      (and (some? new-parent) (not (:archived new-parent))))
-
     (if (contains? updates :parent_id)
       (api/check-403
        (and (mi/can-write? new-parent)
@@ -1593,7 +1586,6 @@
       ;; Restoring to original location, use `can_restore` for a single source of truth
       (api/check-403
        (:can_restore (t2/hydrate collection :can_restore))))
-
     (t2/with-transaction [_conn]
       (t2/update! :model/Collection (u/the-id collection)
                   {:location             new-location
@@ -1886,7 +1878,6 @@
         (let [msg (tru "You cannot move a Collection to a different namespace once it has been created.")]
           (throw (ex-info msg {:status-code 400, :errors {:namespace msg}})))))
     (assert-valid-namespace (merge (select-keys collection-before-updates [:namespace]) collection-updates))
-
     ;; (3.6) Check that the parent collection allows this collection to be there
     (check-allowed-content (:type collection) (when-let [location (:location collection)] (location-path->parent-id location)))
     ;; (3.7) Check if it's a semantic-library collection that can't be updated
@@ -1932,7 +1923,6 @@
                    :model/Pulse
                    :model/Timeline]]
       (t2/delete! model :collection_id [:in affected-collection-ids])))
-
   ;; You can't delete a Personal Collection! Unless we enable it because we are simultaneously deleting the User
   (when-not *allow-deleting-personal-collections*
     (when (:personal_owner_id collection)
@@ -2321,21 +2311,17 @@
                               (and
                                ;; the item is archived
                                (:archived item)
-
                                ;; the item is directly in the trash (it was archived independently, not as
                                ;; part of a collection)
                                (:archived_directly item)
-
                                ;; EITHER:
                                (or
                                 ;; the item was archived from the root collection
                                 (nil? (:collection_id item))
                                 ;; or the collection we'll restore to actually exists.
                                 (some? collection))
-
                                ;; the collection we'll restore to is not archived
                                (not (:archived collection))
-
                                ;; we have perms on the collection
                                (mi/can-write? (or collection root-collection)))))))
 

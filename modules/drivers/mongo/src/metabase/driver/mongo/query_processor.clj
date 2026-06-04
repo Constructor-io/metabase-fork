@@ -725,7 +725,6 @@ function(bin) {
     (with-rvalue-temporal-bucketing
       {"$cond" [{"$eq" [{"$type" rvalue} "string"]}
                 {"$toDate" rvalue}
-
                 rvalue]}
       :day)))
 
@@ -804,9 +803,9 @@ function(bin) {
 (defmethod datetime-diff :month
   [x y _unit]
   {$add [{"$dateDiff" {:startDate x, :endDate y, :unit "month"}}
-           ;; dateDiff counts month boundaries not whole months, so we need to adjust
-           ;; if x<y but x>y in the month calendar then subtract one month
-           ;; if x>y but x<y in the month calendar then add one month
+         ;; dateDiff counts month boundaries not whole months, so we need to adjust
+         ;; if x<y but x>y in the month calendar then subtract one month
+         ;; if x>y but x<y in the month calendar then add one month
          {:$switch {:branches [{:case {:$and [{$lt [x y]}
                                               {$gt [{$dayOfMonth x} {$dayOfMonth y}]}]}
                                 :then -1}
@@ -1045,7 +1044,7 @@ function(bin) {
   "Rename :join-alias properties fields to ::join-local.
   See [[find-mapped-field-name]] for an explanation why this is done."
   [expr alias]
-  (driver-api/replace-lite expr
+  (driver-api/replace expr
     [:field _ {:join-alias (a :guard (= a alias))}]
     (update &match 2 set/rename-keys {:join-alias ::join-local})))
 
@@ -1122,7 +1121,7 @@ function(bin) {
              :default  (->rvalue (:default options))}})
 
 (defn- aggregation->rvalue [ag]
-  (driver-api/match-lite ag
+  (driver-api/match-one ag
     [:aggregation-options ag' _]
     (&recur ag')
 
@@ -1405,14 +1404,12 @@ function(bin) {
                    ;; if there is only one breakout, always use the user's sort order
                    (when (= (count id) 1)
                      (window-sort id user-sort))
-
                    ;; if we don't have a temporal breakout, sort by the last breakout, but
                    ;; use the user's sort direction if specified
                    (when-not finest-temporal-index
                      (->> user-sort
                           (filter #(= sort-name (first %)))
                           (window-sort id)))
-
                    default-sort)
 
         partition-expr (into {}
@@ -1462,7 +1459,7 @@ function(bin) {
    (fn [m field-clause]
      (assoc-in
       m
-      (driver-api/match-lite field-clause
+      (driver-api/match-one field-clause
         [:field (field-id :guard integer?) _]
         (str/split (field-alias field-clause) #"\.")
 
@@ -1663,7 +1660,7 @@ function(bin) {
 (defn- query->collection-name
   "Return `:collection` from a source query, if it exists."
   [query]
-  (driver-api/match-lite query
+  (driver-api/match-one query
     {:collection (collection :guard identity)}
     ;; ignore source queries inside `:joins` or `:collection` outside of a `:source-query`
     (when (and (some #{:source-query} &parents)
@@ -1761,7 +1758,7 @@ function(bin) {
                        source-alias)
                 [:field source-alias opts]
                 [:field id-or-name opts])))]
-    (driver-api/replace-lite form
+    (driver-api/replace form
       [:field & _]
       (update-field-ref &match)
 
