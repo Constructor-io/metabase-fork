@@ -71,6 +71,15 @@ Maximum number of rows to return for aggregated queries via the API.
 
 Must be less than 1048575. See also MB_UNAGGREGATED_QUERY_ROW_LIMIT.
 
+### `MB_AI_FEATURES_ENABLED`
+
+- Type: boolean
+- Default: `true`
+- [Exported as](../installation-and-operation/serialization.md): `ai-features-enabled`.
+- [Configuration file name](./config-file.md): `ai-features-enabled`
+
+Whether AI features are enabled.
+
 ### `MB_ALLOWED_IFRAME_HOSTS`
 
 - Type: string
@@ -101,13 +110,22 @@ x.com`
 
 Allowed iframe hosts.
 
+### `MB_ANALYTICS_PII_RETENTION_ENABLED`
+
+- Type: boolean
+- Default: `false`
+- [Exported as](../installation-and-operation/serialization.md): `analytics-pii-retention-enabled`.
+- [Configuration file name](./config-file.md): `analytics-pii-retention-enabled`
+
+Enable logging of embed path, query parameters, user agent, and IP address of who views your internal data and embeds. This information will be shown in your usage analytics.
+
 ### `MB_ANON_TRACKING_ENABLED`
 
 - Type: boolean
 - Default: `true`
 - [Configuration file name](./config-file.md): `anon-tracking-enabled`
 
-Enable the collection of anonymous usage data in order to help us improve.
+Enable the collection of anonymous usage data in order to help Metabase improve..
 
 ### `MB_API_KEY`
 
@@ -400,8 +418,7 @@ By default, this is 20 minutes.
 Timeout in minutes for the database's query execution, both for the Metabase application database and any data connections.
   If you have long-running queries, you might consider increasing this value. Adjusting the timeout does not impact Metabase’s frontend.
 
-  This setting also applies to individual queries executed within transforms, so make sure the duration is long enough
-  that it doesn't timeout any long-running queries in your transforms.
+  This setting does not apply to queries executed within transforms; those are governed by MB_TRANSFORM_TIMEOUT instead.
 
   Please be aware that other services (like Nginx) may still drop long-running queries.
 
@@ -564,6 +581,15 @@ SMTP username.
 - [Configuration file name](./config-file.md): `email-smtp-username-override`
 
 Custom SMTP server username.
+
+### `MB_EMBEDDED_METABOT_ENABLED`
+
+- Type: boolean
+- Default: `true`
+- [Exported as](../installation-and-operation/serialization.md): `embedded-metabot-enabled`.
+- [Configuration file name](./config-file.md): `embedded-metabot-enabled`
+
+Whether Metabot is enabled for embedding.
 
 ### `MB_EMBEDDING_APP_ORIGIN [DEPRECATED]`
 
@@ -1152,6 +1178,22 @@ When set to `true`, users who log in via LDAP will automatically get a Metabase 
 
 The array of last two ISO8601 dates when an admin dismissed the license token missing banner.
 
+### `MB_LLM_ANTHROPIC_API_KEY`
+
+- Type: string
+- Default: `null`
+- [Configuration file name](./config-file.md): `llm-anthropic-api-key`
+
+The Anthropic API Key.
+
+### `MB_LLM_METABOT_PROVIDER`
+
+- Type: string
+- Default: `anthropic/claude-sonnet-4-6`
+- [Configuration file name](./config-file.md): `llm-metabot-provider`
+
+The AI provider and model for Metabot. Format: provider/model-name, e.g. `anthropic/claude-haiku-4-5`, `openai/gpt-4.1-mini`, `openrouter/anthropic/claude-haiku-4-5`.
+
 ### `MB_LOAD_ANALYTICS_CONTENT`
 
 - Type: boolean
@@ -1218,6 +1260,15 @@ Custom CORS origins for self-hosted MCP clients, space-separated.
 - [Configuration file name](./config-file.md): `mcp-apps-cors-enabled-clients`
 
 Popular MCP clients enabled for CORS, stored as CSV client keys (e.g. claude, vscode).
+
+### `MB_METABOT_ENABLED`
+
+- Type: boolean
+- Default: `true`
+- [Exported as](../installation-and-operation/serialization.md): `metabot-enabled`.
+- [Configuration file name](./config-file.md): `metabot-enabled`
+
+Whether Metabot is enabled for regular usage.
 
 ### `MB_METABOT_SLACK_SIGNING_SECRET`
 
@@ -1438,6 +1489,14 @@ Whether to automatically import from the remote git repository. Only applies if 
 
 If remote-sync-type is :read-only and remote-sync-auto-import is true, the rate (in minutes) at which to check for updates to import. Defaults to 5.
 
+### `MB_REMOTE_SYNC_BRANCH`
+
+- Type: string
+- Default: `null`
+- [Configuration file name](./config-file.md): `remote-sync-branch`
+
+The remote branch to sync with, e.g. `main`.
+
 ### `MB_REMOTE_SYNC_CHECK_CHANGES_CACHE_TTL_SECONDS`
 
 - Type: integer
@@ -1454,6 +1513,14 @@ Time-to-live in seconds for the remote changes check cache. Default is 60 second
 
 The maximum amount of time a remote sync task will be given to complete.
 
+### `MB_REMOTE_SYNC_TOKEN`
+
+- Type: string
+- Default: `null`
+- [Configuration file name](./config-file.md): `remote-sync-token`
+
+An Authorization Bearer token allowing access to the git repo over HTTP.
+
 ### `MB_REMOTE_SYNC_TRANSFORMS`
 
 - Type: boolean
@@ -1461,6 +1528,22 @@ The maximum amount of time a remote sync task will be given to complete.
 - [Configuration file name](./config-file.md): `remote-sync-transforms`
 
 Whether to sync transforms via remote-sync. When enabled, all transforms, transform tags, and transform jobs are synced as a single unit (all-or-nothing).
+
+### `MB_REMOTE_SYNC_TYPE`
+
+- Type: keyword
+- Default: `read-only`
+- [Configuration file name](./config-file.md): `remote-sync-type`
+
+Git synchronization type - :read-write or :read-only.
+
+### `MB_REMOTE_SYNC_URL`
+
+- Type: string
+- Default: `null`
+- [Configuration file name](./config-file.md): `remote-sync-url`
+
+The location of your git repository, e.g. https://github.com/acme-inco/metabase.git.
 
 ### `MB_REPORT_TIMEZONE`
 
@@ -2079,8 +2162,9 @@ Timeout in milliseconds to wait after query cancellation before escalating to th
 
 The timeout for a transform job, in minutes.
 
-Each query executed by a transform is also subject to the MB_DB_QUERY_TIMEOUT_MINUTES timeout,
-  so make sure that value isn't lower, or it will timeout your transform.
+Controls the timeout for transform runs, including the queries they execute. This takes precedence
+  over MB_DB_QUERY_TIMEOUT_MINUTES for queries executed inside a transform, so transforms can run longer than regular
+  Metabase queries.
 
 ### `MB_TRANSFORMS_ENABLED`
 

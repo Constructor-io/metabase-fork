@@ -53,7 +53,7 @@
                    (m/dissoc-in [:data :results_metadata])
                    (m/dissoc-in [:data :insights]))]
      (cond
-       (contains? #{:id :started_at :running_time :hash :cache_hash} k)
+       (contains? #{:id :started_at :running_time :hash :cache_hash :auth_method :metabase_version} k)
        [k (boolean v)]
 
        (and (= :data k) (contains? v :native_form))
@@ -128,7 +128,19 @@
                   :started_at       true
                   :running_time     true
                   :embedding_client nil
-                  :embedding_version nil}
+                  :embedding_hostname nil
+                  :embedding_path nil
+                  :embedding_route nil
+                  :embedding_sdk_version nil
+                  :metabase_version true
+                  :auth_method      true
+                  :ip_address       nil
+                  :is_db_routed     false
+                  :is_impersonated  false
+                  :parameters       nil
+                  :tenant_id        nil
+                  :user_agent       nil
+                  :sanitized_user_agent nil}
                  (format-response (most-recent-query-execution-for-query query)))))))))
 
 (deftest failure-test
@@ -779,7 +791,6 @@
             (is (= "completed" (:status result)))
             (is (= 4 (count (get-in result [:data :cols]))))
             (is (= 140 (count rows)))
-
             (is (= ["AK" "Google" 0 119] (first rows)))
             (is (= ["AK" "Organic" 0 89] (second rows)))
             (is (= ["WA" nil 2 148] (nth rows 135)))
@@ -796,7 +807,6 @@
             (is (= "completed" (:status result)))
             (is (= 4 (count (get-in result [:data :cols]))))
             (is (= 137 (count rows)))
-
             (is (= ["AK" "Google" 0 27] (first rows)))
             (is (= ["AK" "Organic" 0 25] (second rows)))
             (is (= ["VA" nil 2 29] (nth rows 130)))
@@ -868,7 +878,6 @@
                                                             (mt/id :people :source)]})
                          :values set)]
           (is (set/subset? #{["Doohickey"] ["Facebook"]} values))))
-
       (testing "search"
         (let [values (-> (mt/user-http-request :crowberto :post 200
                                                "dataset/parameter/search/g"
@@ -879,7 +888,6 @@
           ;; results matched on g, does not include Doohickey (which is in above results)
           (is (set/subset? #{["Widget"] ["Google"]} values))
           (is (not (contains? values ["Doohickey"])))))
-
       (testing "deduplicates the values returned from multiple fields"
         (let [values (-> (mt/user-http-request :crowberto :post 200
                                                "dataset/parameter/values"
@@ -904,7 +912,6 @@
                                                        :type                 :string/=,
                                                        :name                 "Text"
                                                        :id                   "abc"}})))))
-
         (testing "if value-field not found in source card"
           (mt/with-temp [:model/Card {source-card-id :id} {:archived true}]
             (is (= mock-default-result

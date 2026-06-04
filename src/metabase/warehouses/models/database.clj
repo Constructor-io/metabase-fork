@@ -1,9 +1,8 @@
 (ns metabase.warehouses.models.database
   (:require
-   [clojure.core.match :refer [match]]
    [clojure.data :as data]
    [medley.core :as m]
-   [metabase.analytics.core :as analytics]
+   [metabase.analytics-interface.core :as analytics]
    [metabase.api.common :as api]
    [metabase.app-db.core :as mdb]
    [metabase.audit-app.core :as audit]
@@ -45,8 +44,8 @@
   [query-type model]
   (comp
    (next-method query-type model)
-    ;; This is for safety - if a secret ever gets stored in details we don't want it to leak.
-    ;; This will also help to secure properties that we set to secret in the future.
+   ;; This is for safety - if a secret ever gets stored in details we don't want it to leak.
+   ;; This will also help to secure properties that we set to secret in the future.
    (map secret/clean-secret-properties-from-database)))
 
 (t2/deftransforms :model/Database
@@ -177,26 +176,27 @@
 (defn- infer-db-schedules
   "Infer database schedule settings based on its options."
   [{:keys [details is_full_sync is_on_demand cache_field_values_schedule metadata_sync_schedule] :as database}]
-  (match [(boolean (:let-user-control-scheduling details)) is_full_sync is_on_demand]
-    [false _ _]
-    (merge
-     database
-     (sync.schedules/schedule-map->cron-strings
-      (sync.schedules/default-randomized-schedule)))
+  (let [user-control-scheduling (boolean (:let-user-control-scheduling details))]
+    (cond (not user-control-scheduling)
+          (merge
+           database
+           (sync.schedules/schedule-map->cron-strings
+            (sync.schedules/default-randomized-schedule)))
 
-    ;; "Regularly on a schedule"
-    ;; -> sync both steps, schedule should be provided
-    [true true false]
-    (do
-      (assert (every? some? [cache_field_values_schedule metadata_sync_schedule]))
-      database)
+          (and user-control-scheduling is_full_sync (not is_on_demand))
+          ;; "Regularly on a schedule"
+          ;; -> sync both steps, schedule should be provided
+          (do
+            (assert (every? some? [cache_field_values_schedule metadata_sync_schedule]))
+            database)
 
-    ;; "Only when adding a new filter" or "Never, I'll do it myself"
-    ;; -> Sync metadata only
-    [true false _]
-    ;; schedules should only contains metadata_sync, but FE might sending both
-    ;; so we just manually nullify it here
-    (assoc database :cache_field_values_schedule nil)))
+          (and user-control-scheduling (not is_full_sync))
+          ;; schedules should only contains metadata_sync, but FE might sending both
+          ;; so we just manually nullify it here
+          (assoc database :cache_field_values_schedule nil)
+
+          :else (throw (ex-info "Illegal options combination."
+                                (select-keys database [:let-user-control-scheduling :is_full_sync :is_on_demand]))))))
 
 (defn is-destination?
   "Is this database a destination database for some router database?"
@@ -581,13 +581,13 @@
                           (setting/can-read-setting? setting-name
                                                      (setting/current-user-readable-visibilities))
                           (catch Throwable e
-                         ;; there is an known issue with exception is ignored when render API response (#32822)
-                         ;; If you see this error, you probably need to define a setting for `setting-name`.
-                         ;; But ideally, we should resolve the above issue, and remove this try/catch
+                            ;; there is an known issue with exception is ignored when render API response (#32822)
+                            ;; If you see this error, you probably need to define a setting for `setting-name`.
+                            ;; But ideally, we should resolve the above issue, and remove this try/catch
                             (log/errorf e "Error checking the readability of %s setting. The setting will be hidden in API response."
                                         setting-name)
-                         ;; let's be conservative and hide it by defaults, if you want to see it,
-                         ;; you need to define it :)
+                            ;; let's be conservative and hide it by defaults, if you want to see it,
+                            ;; you need to define it :)
                             false)))
                       settings)
                      (when (not= <> settings)
@@ -630,12 +630,20 @@
               :is_sample        false
               :uploads_enabled  false}})
 
+(def ^:dynamic *include-h2-in-extract?*
+  "When false (the default), [[serdes/extract-query]] skips H2 databases because they are rejected at import time
+  by [[assert-not-h2!]]. Round-trip tests that exercise H2 throughout — and rebind `assert-not-h2!` accordingly —
+  may rebind this to `true` to keep the H2 databases in the extract."
+  false)
+
 (defmethod serdes/extract-query "Database"
   [model-name {:keys [where]}]
   (t2/reducible-select (keyword "model" model-name)
-                       {:where [:and
-                                (or where true)
-                                [:= :router_database_id nil]]}))
+                       {:where (cond-> [:and
+                                        (or where true)
+                                        [:= :router_database_id nil]]
+                                 (not *include-h2-in-extract?*)
+                                 (conj [:not= :engine "h2"]))}))
 
 (defmethod serdes/entity-id "Database"
   [_ {:keys [name]}]
@@ -667,6 +675,25 @@
                               (:details ingested)            (update :details driver/sanitize-db-details)
                               (:write_data_details ingested) (update :write_data_details driver/sanitize-db-details))
                             maybe-local))
+
+(def ^:private metadata-export-perms
+  {:perms/view-data      :unrestricted
+   :perms/create-queries :query-builder})
+
+(defmethod serdes/metadata-query :model/Database
+  [model opts]
+  (t2/reducible-query {:select [:id :name :engine]
+                       :from   [[(t2/table-name model) :db]]
+                       :where  (serdes/metadata-query-filter model :db opts)}))
+
+(defmethod serdes/metadata-query-filter :model/Database
+  [_model alias {:keys [user-info database-ids]}]
+  (cond-> [:and
+           [:= (u/qualified-key alias :is_audit) false]
+           [:= (u/qualified-key alias :router_database_id) nil]
+           [:in (u/qualified-key alias :id)
+            (perms/visible-database-filter-select user-info metadata-export-perms)]]
+    (seq database-ids) (conj [:in (u/qualified-key alias :id) database-ids])))
 
 (def ^{:arglists '([table-id])} table-id->database-id
   "Retrieve the `Database` ID for the given table-id."

@@ -1,5 +1,7 @@
 (ns ^:mb/driver-tests metabase.driver.snowflake-test
   (:require
+   [buddy.core.codecs :as codecs]
+   [buddy.core.hash :as buddy-hash]
    [clojure.data :as data]
    [clojure.java.jdbc :as jdbc]
    [clojure.set :as set]
@@ -11,7 +13,7 @@
    [metabase.driver :as driver]
    ^{:clj-kondo/ignore [:deprecated-namespace]} [metabase.driver.common.parameters :as params]
    [metabase.driver.snowflake :as driver.snowflake]
-   [metabase.driver.sql :as driver.sql]
+   [metabase.driver.sql-jdbc :as driver.sql-jdbc]
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
@@ -166,15 +168,19 @@
                                                                                             (assoc :host alternative-host)
                                                                                             (assoc :use-hostname use-hostname))]
                                                                             (sql-jdbc.conn/connection-details->spec :snowflake details))))
-        true nil "//ls10467.us-east-2.aws.snowflakecomputing.com/"
-        true "" "//ls10467.us-east-2.aws.snowflakecomputing.com/"
-        true "  " "//ls10467.us-east-2.aws.snowflakecomputing.com/"
-        true "snowflake.example.com/" "//snowflake.example.com/"
-        true "snowflake.example.com" "//snowflake.example.com/"
-        false nil "//ls10467.us-east-2.aws.snowflakecomputing.com/"
-        false "" "//ls10467.us-east-2.aws.snowflakecomputing.com/"
-        false "snowflake.example.com/" "//ls10467.us-east-2.aws.snowflakecomputing.com/"
-        false "snowflake.example.com" "//ls10467.us-east-2.aws.snowflakecomputing.com/"))
+        true nil "//ls10467.us-east-2.aws.snowflakecomputing.com/?enablePutGet=false"
+        true "" "//ls10467.us-east-2.aws.snowflakecomputing.com/?enablePutGet=false"
+        true "  " "//ls10467.us-east-2.aws.snowflakecomputing.com/?enablePutGet=false"
+        true "snowflake.example.com/" "//snowflake.example.com/?enablePutGet=false"
+        true "snowflake.example.com" "//snowflake.example.com/?enablePutGet=false"
+        false nil "//ls10467.us-east-2.aws.snowflakecomputing.com/?enablePutGet=false"
+        false "" "//ls10467.us-east-2.aws.snowflakecomputing.com/?enablePutGet=false"
+        false "snowflake.example.com/" "//ls10467.us-east-2.aws.snowflakecomputing.com/?enablePutGet=false"
+        false "snowflake.example.com" "//ls10467.us-east-2.aws.snowflakecomputing.com/?enablePutGet=false"))
+    (testing "Unsafe options are removed"
+      (let [details (assoc details :additional-options "enablePutGet=true")
+            spec (sql-jdbc.conn/connection-details->spec :snowflake details)]
+        (is (re-find #"enablePutGet=false" (:subname spec)))))
     (testing "Application parameter is set to identify Metabase connections"
       (is (= "Metabase_Metabase"
              (:application (sql-jdbc.conn/connection-details->spec :snowflake details)))))))
@@ -423,20 +429,15 @@
              (testing "dynamic-table?"
                (testing "returns true for dynamic table"
                  (is (true? (#'driver.snowflake/dynamic-table? conn db-name (:schema dynamic-table) (:name dynamic-table)))))
-
                (testing "returns false for normal table"
                  (is (false? (#'driver.snowflake/dynamic-table? conn db-name (:schema normal-table) (:name normal-table)))))
-
                (testing "returns false if db-name is invalid, make sure we don't throw an exception"
                  (is (false? (#'driver.snowflake/dynamic-table? conn (mt/random-name) (:schema normal-table) (:name normal-table))))))
-
              (testing "sql-jdbc.describe-table/get-table-pks"
                (testing "returns empty array for dynamic table"
                  (is (= [] (sql-jdbc.describe-table/get-table-pks :snowflake conn db-name dynamic-table))))
-
                (testing "also works if db-name is nil"
                  (is (= [] (sql-jdbc.describe-table/get-table-pks :snowflake conn nil dynamic-table)))))
-
              (testing "driver/describe-table-fks returns empty set for dynamic table"
                #_{:clj-kondo/ignore [:deprecated-var]}
                (is (= #{} (driver/describe-table-fks :snowflake (mt/db) dynamic-table)))))))))))
@@ -522,7 +523,7 @@
            {:user some?
             :password some?
             :private_key_file complement}
-            ;; Before `use-password` password took precedence over a key file
+           ;; Before `use-password` password took precedence over a key file
            (sql-jdbc.conn/connection-details->spec :snowflake (assoc details :private-key-value pk-key))))
       (is (=?
            {:user some?
@@ -664,7 +665,6 @@
                               expected-migrated (cond-> details-to-succeed
                                                   uses-secret? (assoc :private-key-id secret-id)
                                                   :always (dissoc :private-key-options :private-key-value :private-key-path))]
-
                           (testing "Migration persists as expected"
                             (is (= expected-migrated migrated-details)))
                           (testing "Migration results in unambiguous details"
@@ -685,13 +685,13 @@
     :snowflake
     (let [account           (tx/db-test-env-var-or-throw :snowflake :account)
           warehouse         (tx/db-test-env-var-or-throw :snowflake :warehouse)
-         ;; User with default role PULIC. To access the db custom role has to be used.
+          ;; User with default role PULIC. To access the db custom role has to be used.
           user              (tx/db-test-env-var-or-throw :snowflake :rsa-role-test-custom-user)
           private-key-value (mt/format-env-key (tx/db-test-env-var-or-throw :snowflake :pk-private-key))
           db                (tx/db-test-env-var-or-throw :snowflake :rsa-role-test-db)
           database          {:name    "Snowflake RSA test DB custom"
                              :engine  :snowflake
-                            ;; Details as collected from `api handler POST / database` are used.
+                             ;; Details as collected from `api handler POST / database` are used.
                              :details {:role                nil
                                        :warehouse           warehouse
                                        :db                  db
@@ -703,7 +703,7 @@
                                        :private-key-value   (mt/bytes->base64-data-uri (u/string-to-bytes private-key-value))
                                        :tunnel-enabled      false
                                        :user                user}}]
-     ;; TODO: We should make those message returned when role is incorrect more descriptive!
+      ;; TODO: We should make those message returned when role is incorrect more descriptive!
       (testing "Database can not be accessed with `nil` default role"
         (is (= "Looks like the Database name is incorrect."
                (:message (mt/user-http-request :crowberto :post 400 "database"
@@ -713,7 +713,7 @@
                (:message (mt/user-http-request :crowberto :post 400 "database"
                                                (assoc-in database [:details :role] "PUBLIC"))))))
       (testing "Database can be created using specified role"
-       ;; Map containing :details is expected to be database, hence considering request successful.
+        ;; Map containing :details is expected to be database, hence considering request successful.
         (is (contains? (mt/user-http-request :crowberto :post 200 "database"
                                              (assoc-in database [:details :role]
                                                        (tx/db-test-env-var-or-throw :snowflake :rsa-role-test-role)))
@@ -733,7 +733,7 @@
                  (mt/rows (qp/process-query {:database (:id db)
                                              :type :query
                                              :query {:source-table (:id table)}})))))
-       ;; Cleanup
+        ;; Cleanup
         (u/ignore-exceptions (t2/delete! :model/Database (:id db)))
         (u/ignore-exceptions (t2/delete! :model/Table (:id table)))
         (u/ignore-exceptions (t2/delete! :model/Field :id [:in (map :id fields)]))
@@ -744,13 +744,13 @@
     :snowflake
     (let [account           (tx/db-test-env-var-or-throw :snowflake :account)
           warehouse         (tx/db-test-env-var-or-throw :snowflake :warehouse)
-         ;; User with default role PULIC. To access the db custom role has to be used.
+          ;; User with default role PULIC. To access the db custom role has to be used.
           user              (tx/db-test-env-var-or-throw :snowflake :rsa-role-test-default-user)
           private-key-value (mt/format-env-key (tx/db-test-env-var-or-throw :snowflake :pk-private-key))
           db                (tx/db-test-env-var-or-throw :snowflake :rsa-role-test-db)
           database          {:name    "Snowflake RSA test DB default"
                              :engine  :snowflake
-                            ;; Details as collected from `api handler POST / database` are used.
+                             ;; Details as collected from `api handler POST / database` are used.
                              :details {:role                nil
                                        :warehouse           warehouse
                                        :db                  db
@@ -763,7 +763,7 @@
                                        :tunnel-enabled      false
                                        :user                user}}]
       (testing "Database can be created using _default_ `nil` role"
-       ;; Map containing :details is expected to be database, hence considering request successful.
+        ;; Map containing :details is expected to be database, hence considering request successful.
         (is (contains? (mt/user-http-request :crowberto :post 200 "database" database)
                        :details))
         ;; As the request is asynchronous, wait for sync to complete.
@@ -781,7 +781,7 @@
                  (mt/rows (qp/process-query {:database (:id db)
                                              :type :query
                                              :query {:source-table (:id table)}})))))
-       ;; Cleanup
+        ;; Cleanup
         (u/ignore-exceptions (t2/delete! :model/Database (:id db)))
         (u/ignore-exceptions (t2/delete! :model/Table (:id table)))
         (u/ignore-exceptions (t2/delete! :model/Field :id [:in (map :id fields)]))
@@ -984,15 +984,17 @@
                  (:write_data_details db))))))))
 
 (deftest ^:parallel set-role-statement-test
-  (testing "set-role-statement should return a USE ROLE command, with the role quoted if it contains special characters"
-    ;; No special characters
-    (is (= "USE ROLE MY_ROLE;"        (driver.sql/set-role-statement :snowflake "MY_ROLE")))
-    (is (= "USE ROLE ROLE123;"        (driver.sql/set-role-statement :snowflake "ROLE123")))
-    (is (= "USE ROLE lowercase_role;" (driver.sql/set-role-statement :snowflake "lowercase_role")))
-
-    ;; Special characters
-    (is (= "USE ROLE \"Role.123\";"   (driver.sql/set-role-statement :snowflake "Role.123")))
-    (is (= "USE ROLE \"$role\";"      (driver.sql/set-role-statement :snowflake "$role")))))
+  (testing "set-role-statement should return a parameterized USE ROLE command"
+    (are [role expected] (= expected
+                            (driver.sql-jdbc/set-role-statement :snowflake nil role))
+      "MY_ROLE"                          ["USE ROLE identifier(?);" "MY_ROLE"]
+      "ROLE123"                          ["USE ROLE identifier(?);" "ROLE123"]
+      "lowercase_role"                   ["USE ROLE identifier(?);" "lowercase_role"]
+      "Role.123"                         ["USE ROLE identifier(?);" "\"Role.123\""]
+      "$role"                            ["USE ROLE identifier(?);" "\"$role\""]
+      "Role-X"                           ["USE ROLE identifier(?);" "\"Role-X\""]
+      ;; should escape quotes in role name
+      "Role-X\"); DROP * FROM TABLE; --" ["USE ROLE identifier(?);" "\"Role-X\"\"); DROP * FROM TABLE; --\""])))
 
 (deftest remark-test
   (testing "Queries should have a remark formatted as JSON appended to them with additional metadata"
@@ -1214,7 +1216,6 @@
                       (testing "Last row has expected values"
                         (is (= yesterday-last-str
                                (ffirst (reverse rows)))))))
-
                   (testing "Rows should be properly allocated to days"
                     (let [tested-day (assoc-in tested-field [2 :temporal-unit] :day)
                           tested-minute (assoc-in tested-field [2 :temporal-unit] :minute)]
@@ -1261,28 +1262,24 @@
         (testing "password takes precedence if use-password is true"
           (when (and password use-password)
             (is (= :password (first result))
-                [idxs result])))
-
+                (str [idxs result]))))
         (testing "password comes last if use-password is false or nil"
           (when (and password (not use-password))
             (is (= :password (last result))
-                [idxs result])))
-
+                (str [idxs result]))))
         (testing "path is preferred if options is local"
           (when (and (= "local" options) private-key-value private-key-path)
             (is (= :private-key-path (m/find-first #{:private-key-path :private-key-value} result))
-                [idxs result])))
-
+                (str [idxs result]))))
         (testing "value is preferred if options is nil or uploaded"
           (when (and (not= "local" options) private-key-value private-key-path)
             (is (= :private-key-value (m/find-first #{:private-key-path :private-key-value} result))
-                [idxs result])))
-
+                (str [idxs result]))))
         (testing "ID is checked last if path or value exists"
           (when (or (and private-key-value private-key-id)
                     (and private-key-path private-key-id))
             (is (= :private-key-id (m/find-first #{:private-key-path :private-key-value :private-key-id} (reverse result)))
-                [idxs result])))))))
+                (str [idxs result]))))))))
 
 (deftest have-select-privelege?-timeout-test
   (mt/test-driver :snowflake
@@ -1299,11 +1296,16 @@
                  (is (true? (sql-jdbc.sync.interface/have-select-privilege?
                              driver/*driver* conn schema table-name))))))))))))
 
-(defn- get-db-priv-key [db]
+(defn- get-db-priv-key
+  "Returns a SHA-256 digest of the resolved private key file for `db`."
+  [db]
   (-> (:details db)
       (#'driver.snowflake/resolve-private-key)
       :private_key_file
-      slurp))
+      slurp
+      (.getBytes "UTF-8")
+      buddy-hash/sha256
+      codecs/bytes->hex))
 
 (defn- get-priv-key-details [details pk-user priv-key-var]
   (let [priv-key (tx/db-test-env-var-or-throw :snowflake priv-key-var)]
@@ -1392,19 +1394,16 @@
                                                  [[5 "Enormous Marble Wallet" "Gadget"]
                                                   [9 "Practical Bronze Computer" "Widget"]
                                                   [11 "Ergonomic Silk Coat" "Gadget"]]]
-
                                                 ["case sensitive contains has rows"
                                                  (lib/contains products-category "Gad")
                                                  "CONTAINS(\"PUBLIC\".\"products\".\"category\", 'Gad')"
                                                  [[5 "Enormous Marble Wallet" "Gadget"]
                                                   [11 "Ergonomic Silk Coat" "Gadget"]
                                                   [16 "Incredible Bronze Pants" "Gadget"]]]
-
                                                 ["case sensitive contains with no rows"
                                                  (lib/contains products-category "gad")
                                                  "CONTAINS(\"PUBLIC\".\"products\".\"category\", 'gad')"
                                                  []]
-
                                                 ["case insensitive starts with has rows"
                                                  (-> (lib/starts-with products-category "GAD")
                                                      lib/ignore-case)
@@ -1412,19 +1411,16 @@
                                                  [[5 "Enormous Marble Wallet" "Gadget"]
                                                   [11 "Ergonomic Silk Coat" "Gadget"]
                                                   [16 "Incredible Bronze Pants" "Gadget"]]]
-
                                                 ["case sensitive starts with has rows"
                                                  (lib/starts-with products-category "Gad")
                                                  "STARTSWITH(\"PUBLIC\".\"products\".\"category\", 'Gad')"
                                                  [[5 "Enormous Marble Wallet" "Gadget"]
                                                   [11 "Ergonomic Silk Coat" "Gadget"]
                                                   [16 "Incredible Bronze Pants" "Gadget"]]]
-
                                                 ["case sensitive starts with has no rows"
                                                  (lib/starts-with products-category "gad")
                                                  "STARTSWITH(\"PUBLIC\".\"products\".\"category\", 'gad')"
                                                  []]
-
                                                 ["case insensitive ends with has rows"
                                                  (-> (lib/ends-with products-category "GET")
                                                      lib/ignore-case)
@@ -1432,14 +1428,12 @@
                                                  [[5 "Enormous Marble Wallet" "Gadget"]
                                                   [9 "Practical Bronze Computer" "Widget"]
                                                   [11 "Ergonomic Silk Coat" "Gadget"]]]
-
                                                 ["case sensitive ends with has rows"
                                                  (lib/ends-with products-category "get")
                                                  "ENDSWITH(\"PUBLIC\".\"products\".\"category\", 'get')"
                                                  [[5 "Enormous Marble Wallet" "Gadget"]
                                                   [9 "Practical Bronze Computer" "Widget"]
                                                   [11 "Ergonomic Silk Coat" "Gadget"]]]
-
                                                 ["case sensitive ends with has no rows"
                                                  (lib/ends-with products-category "GET")
                                                  "ENDSWITH(\"PUBLIC\".\"products\".\"category\", 'GET')"

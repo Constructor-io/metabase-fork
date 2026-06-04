@@ -10,6 +10,7 @@
    [metabase.driver-api.core :as driver-api]
    [metabase.driver.common :as driver.common]
    [metabase.driver.sql :as driver.sql]
+   [metabase.driver.sql-jdbc :as driver.sql-jdbc]
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
@@ -795,17 +796,14 @@
       (let [database {:lib/type :metadata/database
                       :details {:user "login_user" :role "db_user"}}]
         (is (= "db_user" (driver.sql/default-database-role :sqlserver database)))))
-
     (testing "returns nil when no role is configured"
       (let [database {:lib/type :metadata/database
                       :details {:user "login_user"}}]
         (is (nil? (driver.sql/default-database-role :sqlserver database)))))
-
     (testing "returns nil even when user is 'sa'"
       (let [database {:lib/type :metadata/database
                       :details {:user "sa"}}]
         (is (nil? (driver.sql/default-database-role :sqlserver database)))))
-
     (testing "ignores user field and only uses role field"
       (let [database {:lib/type :metadata/database
                       :details {:user "login_user" :role "impersonation_user"}}]
@@ -829,7 +827,6 @@
                                          {driver-api/qp.add.source-table  (mt/id :venues)
                                           driver-api/qp.add.source-alias  "name"
                                           driver-api/qp.add.desired-alias "name"}]]}}]
-
         (is (= {:where
                 [:=
                  [::h2x/identifier :field ["JoinedCategories" "LiteralString"]]
@@ -912,3 +909,11 @@
                                       privileges)]
                (when (seq dbo-orders)
                  (is (every? :select dbo-orders)))))))))))
+
+(deftest ^:parallel set-role-statement-escape-quotes-test
+  (mt/test-driver :sqlserver
+    (is (= "REVERT; EXECUTE AS USER = 'role''; SELECT sleep(10); --';"
+           (sql-jdbc.execute/do-with-connection-with-options
+            :sqlserver (mt/id) nil
+            (fn [conn]
+              (driver.sql-jdbc/set-role-statement :sqlserver conn "role'; SELECT sleep(10); --")))))))

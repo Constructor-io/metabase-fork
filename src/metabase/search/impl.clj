@@ -129,9 +129,9 @@
                                         {:location (:collection_location result)})
                                       :effective_ancestors)
                                      :effective_ancestors
-                                      ;; two pieces for backwards compatibility:
-                                      ;; - remove the root collection
-                                      ;; - remove the `personal_owner_id`
+                                     ;; two pieces for backwards compatibility:
+                                     ;; - remove the root collection
+                                     ;; - remove the `personal_owner_id`
                                      (remove collection.root/is-root-collection?)
                                      (map #(dissoc % :personal_owner_id))))))]
     (map annotate search-results)))
@@ -445,7 +445,7 @@
 
 (mu/defn search
   "Builds a search query that includes all the searchable entities, and runs it."
-  [search-ctx :- search.config/SearchContext]
+  [search-ctx :- SearchContext]
   (tracing/with-span :search "search.execute" {:search/engine       (name (:search-engine search-ctx))
                                                :search/query-length (count (:search-string search-ctx))
                                                :search/model-count  (count (:models search-ctx))}

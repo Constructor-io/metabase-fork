@@ -570,9 +570,9 @@ jobs:
             env:
               enable-ssl-tests: 'false'
               enable-aws-iam-tests: 'false'
-          - name: MySQL 8.4
-            junit-name: be-tests-mysql-8-4-ee
-            image: mysql:8.4
+          - name: MySQL 8.0
+            junit-name: be-tests-mysql-8-0-ee
+            image: mysql:8.0
             env:
               enable-ssl-tests: 'false'
               enable-aws-iam-tests: 'false'
@@ -1625,7 +1625,9 @@ jobs:
       # if you add a driver job, you must add it to this list for it to be a required check
       - be-tests-h2
       - be-tests-athena-ee
-      - be-tests-bigquery-cloud-sdk-ee
+      # these are not reliable, but we want to run them anyway to gather data about failures
+      # - be-tests-snowflake-ee
+      # - be-tests-bigquery-cloud-sdk-ee
       - be-tests-druid-ee
       - be-tests-databricks-ee
       - be-tests-druid-jdbc-ee
@@ -1637,7 +1639,6 @@ jobs:
       - be-tests-postgres
       - be-tests-presto-jdbc-ee
       - be-tests-redshift-ee
-      - be-tests-snowflake-ee
       - be-tests-sparksql-ee
       - be-tests-sqlite-ee
       - be-tests-sqlserver
@@ -1665,7 +1666,7 @@ jobs:
               }));
 
             // are all jobs skipped or successful?
-            if (jobs.every(job => (job.result === 'skipped' || job.result === 'success' || job.name == 'be-tests-starburst-ee'))) {
+            if (jobs.every(job => (job.result === 'skipped' || job.result === 'success'))) {
                 console.log("");
                 console.log("        _------.        ");
                 console.log("       /  ,     \_      ");

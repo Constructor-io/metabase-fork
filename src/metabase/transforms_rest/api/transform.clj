@@ -9,6 +9,7 @@
    [metabase.transforms-rest.api.transform-job]
    [metabase.transforms-rest.api.transform-tag]
    [metabase.transforms.core :as transforms.core]
+   [metabase.transforms.feature-gating :as transforms.gating]
    [metabase.transforms.schema :as transforms.schema]
    [metabase.transforms.util :as transforms.u]
    [metabase.util.i18n :refer [deferred-tru]]
@@ -168,7 +169,6 @@
   (transforms.core/check-database-feature body)
   (transforms.core/check-feature-enabled! body)
   (transforms.core/validate-incremental-column-type! body)
-
   (api/check (not (transforms-base.u/target-table-exists? body))
              403
              (deferred-tru "A table with that name already exists."))
@@ -281,6 +281,9 @@
    The transform must already be fetched and validated."
   [transform]
   (transforms.core/check-feature-enabled! transform)
+  (api/check (not (transforms.gating/transform-locked? transform))
+             [402 {:message    (deferred-tru "Transforms are temporarily locked because the trial quota has been reached.")
+                   :error-code "metabase_transforms_locked"}])
   (let [start-promise (promise)]
     (u.jvm/in-virtual-thread*
      (transforms.core/execute! transform {:start-promise start-promise

@@ -3,7 +3,7 @@
   (:require
    [clojure.java.io :as io]
    [clojure.string :as str]
-   [metabase.analytics.prometheus :as prometheus]
+   [metabase.analytics-interface.core :as analytics]
    [metabase.api-scope.core :as api-scope]
    [metabase.api.common :as api]
    [metabase.config.core :as config]
@@ -604,7 +604,7 @@
         (with-span :info {:name       :metabot.agent/run-agent-loop
                           :profile-id profile-id
                           :msg-count  (count (:messages opts))}
-          (prometheus/inc! :metabase-metabot/agent-requests labels)
+          (analytics/inc! :metabase-metabot/agent-requests labels)
           (let [start-ms (u/start-timer)]
             (binding [*debug-log*                              (when debug? (atom []))
                       scope/*current-user-scope*               scopes
@@ -616,24 +616,30 @@
                                                   (iterate loop-step)
                                                   (drop-while #(= :continue (:status %)))
                                                   first)]
-                  (prometheus/observe! :metabase-metabot/agent-iterations labels iteration)
+                  (analytics/observe! :metabase-metabot/agent-iterations labels iteration)
                   ;; Emit debug log as a data part if debug mode was active
                   (if (and debug? (seq @*debug-log*))
                     (rf result (debug-log-part @*debug-log*))
                     result))
                 (catch Exception e
-                  (prometheus/inc! :metabase-metabot/agent-errors labels)
-                  (if (:api-error (ex-data e))
-                    (if (:status (ex-data e))
-                      (log/errorf "Agent loop API error: %s status=%s provider=%s body=%s"
-                                  (ex-message e)
-                                  (:status (ex-data e))
-                                  (:provider (ex-data e))
-                                  (pr-str (:body (ex-data e))))
-                      (log/errorf e "Agent loop API error: %s provider=%s"
-                                  (ex-message e)
-                                  (:provider (ex-data e))))
-                    (log/error e "Agent loop error"))
+                  (analytics/inc! :metabase-metabot/agent-errors labels)
+                  (let [{:keys [api-error status provider body]} (ex-data e)
+                        msg (ex-message e)]
+                    (cond
+                      (and api-error status)
+                      (log/errorf e "Agent loop API error: %s status=%s provider=%s body=%s"
+                                  msg status provider (pr-str body))
+
+                      api-error
+                      (log/errorf e "Agent loop API error: %s provider=%s" msg provider)
+
+                      ;; ex-message can be nil/blank for exceptions thrown without a message
+                      ;; (e.g. (NullPointerException.)) — skip the colon when there's nothing to say.
+                      (str/blank? msg)
+                      (log/error e "Agent loop error")
+
+                      :else
+                      (log/errorf e "Agent loop error: %s" msg)))
                   (rf init (error-part e)))
                 (finally
-                  (prometheus/observe! :metabase-metabot/agent-duration-ms labels (u/since-ms start-ms)))))))))))
+                  (analytics/observe! :metabase-metabot/agent-duration-ms labels (u/since-ms start-ms)))))))))))

@@ -188,14 +188,14 @@
         original-table (t2/original table)
         current-active (:active original-table)
         new-active     (:active changes)]
-
     ;; Prevent setting data_authority back to unconfigured once configured
     (when (and (not= (keyword (:data_authority original-table :unconfigured)) :unconfigured)
                (= (keyword (:data_authority changes)) :unconfigured))
       (throw (ex-info "Cannot set data_authority back to unconfigured once it has been configured"
                       {:status-code 400})))
-
-    ;; Prevent changing data_source to/from metabase-transform
+    ;; Prevent changing data_source to/from metabase-transform.
+    ;; The "to metabase-transform" direction is allowed during deserialization so an existing synced table
+    ;; can be migrated to a transform-managed table via serdes.
     (when (contains? changes :data_source)
       (let [original-data-source (some-> (:data_source original-table) keyword)
             new-data-source      (some-> (:data_source changes) keyword)]
@@ -203,11 +203,11 @@
                    (not= new-data-source :metabase-transform))
           (throw (ex-info "Cannot change data_source from metabase-transform"
                           {:status-code 400})))
-        (when (and (not= original-data-source :metabase-transform)
+        (when (and (not mi/*deserializing?*)
+                   (not= original-data-source :metabase-transform)
                    (= new-data-source :metabase-transform))
           (throw (ex-info "Cannot set data_source to metabase-transform"
                           {:status-code 400})))))
-
     ;; Sync visibility_type and data_layer fields
     (let [changes (sync-visibility-fields changes original-table)]
       (cond
@@ -387,22 +387,11 @@
    user-info          :- perms/UserInfo
    permission-mapping :- perms/PermissionMapping
    & [{:keys [include-published-via-collection? active-only?]}]]
-  (let [opts (cond-> {}
-               (some? active-only?) (assoc :active-only? active-only?))
-        {:keys [clause with]} (perms/visible-table-filter-with-cte column-or-exp user-info permission-mapping opts)]
-    (if-let [published-clause (and include-published-via-collection?
-                                   (perms/published-table-visible-clause column-or-exp user-info))]
-      {:clause [:or clause
-                [:and
-                 [:in column-or-exp (perms/visible-table-filter-select
-                                     :id
-                                     user-info
-                                     {:perms/view-data :unrestricted}
-                                     opts)]
-                 published-clause]]
-       :with with}
-      {:clause clause
-       :with with})))
+  (perms/visible-table-filter-with-cte
+   column-or-exp user-info permission-mapping
+   (cond-> {}
+     (some? active-only?) (assoc :active-only? active-only?)
+     include-published-via-collection? (assoc :include-published-via-collection? true))))
 
 ;;; ------------------------------------------------ Serdes Hashing -------------------------------------------------
 
@@ -639,9 +628,10 @@
   (t2/select-one :model/Database :id (:db_id table)))
 
 ;;; ------------------------------------------------- Serialization -------------------------------------------------
-(defmethod serdes/dependencies "Table" [{:keys [db_id collection_id]}]
+(defmethod serdes/dependencies "Table" [{:keys [db_id collection_id transform_id]}]
   (cond-> [[{:model "Database" :id db_id}]]
-    collection_id (conj [{:model "Collection" :id collection_id}])))
+    collection_id (conj [{:model "Collection" :id collection_id}])
+    transform_id  (conj [{:model "Transform" :id transform_id}])))
 
 (defmethod serdes/descendants "Table" [_model-name id {:keys [skip-archived]}]
   (let [fields   (into {} (for [field-id (t2/select-pks-set :model/Field {:where [:= :table_id id]})]
@@ -698,6 +688,36 @@
 (defmethod serdes/storage-path "Table" [table _ctx]
   (conj (serdes/storage-path-prefixes (serdes/path table))
         {:label (:name table) :key (:name table)}))
+
+(defmethod serdes/metadata-query :model/Table
+  [model opts]
+  (t2/reducible-query
+   {:select [[:t.id :id]
+             [:t.db_id :db_id]
+             [:t.name :name]
+             [:t.schema :schema]
+             [:t.description :description]]
+    :from   [[(t2/table-name model) :t]]
+    :join   [[(t2/table-name :model/Database) :db] [:= :t.db_id :db.id]]
+    :where  [:and
+             (serdes/metadata-query-filter :model/Database :db opts)
+             (serdes/metadata-query-filter model :t opts)]}))
+
+(defmethod serdes/metadata-query-filter :model/Table
+  [_model alias {:keys [user-info table-ids schema-ids]}]
+  (let [perm-mapping {:perms/view-data      :unrestricted
+                      :perms/create-queries :query-builder}]
+    (cond-> [:and
+             [:= (u/qualified-key alias :active) true]
+             [:= (u/qualified-key alias :visibility_type) nil]
+             [:in (u/qualified-key alias :id)
+              (perms/visible-table-filter-select :id user-info perm-mapping)]]
+      (seq schema-ids) (conj (into [:or]
+                                   (for [[db-id schemas] schema-ids]
+                                     [:and
+                                      [:= (u/qualified-key alias :db_id) db-id]
+                                      [:in (u/qualified-key alias :schema) schemas]])))
+      (seq table-ids)  (conj [:in (u/qualified-key alias :id) table-ids]))))
 
 ;;;; ------------------------------------------------- Search ----------------------------------------------------------
 
