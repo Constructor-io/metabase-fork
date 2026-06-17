@@ -273,7 +273,7 @@ export const useDataGridInstance = <TData, TValue>({
     data,
     defaultRowHeight,
     columnSizingMap,
-    wrappedColumnsOptions,
+    columnsOptions,
     measureBodyCellDimensions,
   });
 
